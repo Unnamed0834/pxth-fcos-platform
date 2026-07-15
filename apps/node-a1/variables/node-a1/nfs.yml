@@ -1,0 +1,5 @@
+
+
+nfs_server: "198.51.100.10"
+nfs_share: "/mnt/storage/public"
+nfs_mount_point: "/mnt/public"

@@ -1,0 +1,91 @@
+{
+  "node": "node-f1",
+  "artifacts": {
+    "flatcar": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS.asc",
+      "dest": "images/flatcar/flatcar_production_proxmoxve_image.img",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "75415f01a55eeaf9c736029890d72d4e1231faf4ad15e0dd9eaffc95329400ab"
+    },
+    "podman": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw.DIGESTS.asc",
+      "dest": "sysext/podman.raw",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "c4b7c947fda4e98fa28b24dbd8bc953399a0cd895341bd7bf4d7ed7df26f485f"
+    },
+    "restic": {
+      "type": "url",
+      "url": "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_amd64.bz2",
+      "dest": "bin/restic.bz2",
+      "min_size": 1048576,
+      "hash_algo": "sha256",
+      "digest": "13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21"
+    },
+    "forgejo": {
+      "type": "container",
+      "image": "codeberg.org/forgejo/forgejo:15.0.3-rootless",
+      "dest": "containers/forgejo/forgejo-15.0.3-rootless.tar",
+      "min_size": 1048576,
+      "digest": "68a3e4f4cc74def1732633a664c5eb303dd247497c031c2da859a5641ed33999"
+    },
+    "zot": {
+      "type": "container",
+      "image": "ghcr.io/project-zot/zot-linux-amd64:v2.1.17",
+      "dest": "containers/zot/zot-linux-amd64-v2.1.17.tar",
+      "min_size": 1048576,
+      "digest": "2f4da11ec2ed0fccf8e93186bf9bdd7b7115a649a0b954c1a09f776d5199174d"
+    },
+    "caddy": {
+      "type": "build",
+      "image": "localhost/caddy:cloudflare",
+      "dest": "containers/caddy/caddy-latest.tar",
+      "min_size": 1048576,
+      "digest": "5ac4343e18d9701109bf368c923f5c73c4688cd282dc83018aee45eca09c9620"
+    },
+    "postgres": {
+      "type": "container",
+      "image": "postgres:17.10",
+      "dest": "containers/postgres/postgres-17.10.tar",
+      "min_size": 1048576,
+      "digest": "0e91a106a4da991ecd9b2a511eb9a62cc106293a517deed33856ceda5ad429d7"
+    }
+  },
+  "oem": {
+    "disk_raw": "node-f1_oem_disk.raw",
+    "tarball": ".tmp/oem-node-f1.tar.gz",
+    "tarball_size": 0,
+    "headroom": 64,
+    "bundle": {
+      "sysext": [
+        "sysext/*.raw"
+      ],
+      "bin": [
+        "bin/restic.bz2"
+      ],
+      "containers": [
+        "caddy",
+        "forgejo",
+        "zot",
+        "postgres"
+      ],
+      "sources": [
+        {
+          "path": "apps/node-f1/scripts/node-f1-setup.sh",
+          "dest": "scripts/node-f1-setup.sh"
+        },
+        {
+          "path": "../../libs/scripts/ci/lib/logging.sh",
+          "dest": "scripts/lib/logging.sh"
+        }
+      ]
+    }
+  }
+}

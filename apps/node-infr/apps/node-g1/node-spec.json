@@ -1,0 +1,40 @@
+{
+  "vm_id": 2002,
+  "vm_name": "node-g1",
+  "vm_description": "g1.infr.example.com — GPU inference",
+  "ip_address": "198.51.100.51/24",
+  "gateway": "198.51.100.1",
+  "dns": "198.51.100.1",
+  "hostname": "node-g1",
+  "cpu_cores": 16,
+  "cpu_sockets": 2,
+  "memory_mb": 65536,
+  "os_disk_size": 100,
+  "vlan_id": 1001,
+  "network_bridge": "vmbr0",
+  "tags": [
+    "infr",
+    "pxth"
+  ],
+  "gpu_mappings": [
+    "gpu-a",
+    "gpu-b",
+    "gpu-c",
+    "gpu-d"
+  ],
+  "firewall_rules": [
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 22,
+      "comment": "Allow SSH"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "icmp",
+      "comment": "Allow ICMP"
+    }
+  ]
+}

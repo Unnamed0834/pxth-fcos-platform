@@ -1,0 +1,68 @@
+{
+  "_verification_note": "Digest and signature fields for flatcar and zerotier are placeholders (64 zero hex characters). A digest, digests_url, or digests_asc that fails validation must not fall back to an unverified download. Before use, supply the real SHA256 digest, the signed DIGESTS/SHA256SUMS and its .asc, and the corresponding GPG key (gpg_key).",
+  "node": "node-gw1",
+  "artifacts": {
+    "flatcar": {
+      "type": "s3",
+      "bucket": "pxth-fcos",
+      "key": "flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img",
+      "endpoint": "https://tns-01.example.com:9000",
+      "dest": "images/flatcar/flatcar_production_proxmoxve_image.img",
+      "min_size": 104857600,
+      "digests_url": "https://storage.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img.DIGESTS",
+      "digests_asc": "https://storage.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img.DIGESTS.asc",
+      "hash_algo": "sha256",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "gpg_key": "flatcar"
+    },
+    "zerotier": {
+      "type": "url",
+      "url": "https://download.zerotier.com/debian/bookworm/pool/main/z/zerotier-one/zerotier-one_1.16.2_amd64.deb",
+      "dest": "bin/zerotier-one.deb",
+      "min_size": 1048576,
+      "digests_url": "https://download.zerotier.com/debian/bookworm/pool/main/z/zerotier-one/SHA256SUMS",
+      "digests_asc": "https://download.zerotier.com/debian/bookworm/pool/main/z/zerotier-one/SHA256SUMS.asc",
+      "hash_algo": "sha256",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "gpg_key": "zerotier"
+    },
+    "restic": {
+      "type": "url",
+      "url": "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_amd64.bz2",
+      "dest": "bin/restic.bz2",
+      "min_size": 1048576,
+      "hash_algo": "sha256",
+      "digest": "13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21"
+    }
+  },
+  "oem": {
+    "disk_raw": "upload/node-gw1_oem_disk.raw",
+    "tarball": ".tmp/oem-node-gw1.tar.gz",
+    "tarball_size": 0,
+    "headroom": 64,
+    "bundle": {
+      "bin": [
+        "bin/zerotier-one.deb",
+        "bin/restic.bz2"
+      ],
+      "sources": [
+        {
+          "path": "apps/node-gw1/scripts/node-gw1-setup.sh",
+          "dest": "scripts/node-gw1-setup.sh"
+        },
+        {
+          "path": "apps/node-gw1/scripts/zt-routing-setup.sh",
+          "dest": "scripts/zt-routing-setup.sh"
+        },
+        {
+          "path": "apps/node-gw1/scripts/secrets-create.sh",
+          "dest": "scripts/secrets-create.sh"
+        },
+        {
+          "path": "../../libs/scripts/ci/lib/logging.sh",
+          "dest": "scripts/lib/logging.sh"
+        }
+      ]
+    }
+  }
+}

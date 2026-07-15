@@ -1,0 +1,53 @@
+{
+  "gateway": "203.0.113.1",
+  "dns": "203.0.113.1",
+  "cpu_cores": 6,
+  "cpu_sockets": 1,
+  "memory_mb": 12288,
+  "os_disk_size": 100,
+  "vlan_id": 1002,
+  "network_bridge": "vmbr0",
+  "tags": [
+    "node",
+    "gs",
+    "prod"
+  ],
+  "nodes": [
+    {
+      "name": "node-gs1",
+      "name_us": "node_gs1",
+      "vm_id": 2008,
+      "ip_address": "203.0.113.31/24",
+      "hostname": "node-gs1"
+    },
+    {
+      "name": "node-gs2",
+      "name_us": "node_gs2",
+      "vm_id": 2009,
+      "ip_address": "203.0.113.32/24",
+      "hostname": "node-gs2"
+    },
+    {
+      "name": "node-gs3",
+      "name_us": "node_gs3",
+      "vm_id": 2010,
+      "ip_address": "203.0.113.33/24",
+      "hostname": "node-gs3"
+    }
+  ],
+  "firewall_rules": [
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 22,
+      "comment": "SSH"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "icmp",
+      "comment": "ICMP"
+    }
+  ]
+}

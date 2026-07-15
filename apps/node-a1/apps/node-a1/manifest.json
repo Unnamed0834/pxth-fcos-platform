@@ -1,0 +1,106 @@
+{
+  "_verification_note": "The flatcar digest is a placeholder (64 zero hex characters, sha256). Before use, replace it with the real digest and signed DIGESTS/DIGESTS.asc from the artifact publisher.",
+  "node": "node-a1",
+  "artifacts": {
+    "flatcar": {
+      "type": "s3",
+      "bucket": "pxth-fcos",
+      "key": "flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img",
+      "endpoint": "https://tns-01.example.com:9000",
+      "dest": "images/flatcar/flatcar_production_proxmoxve_image.img",
+      "min_size": 104857600,
+      "digests_url": "https://tns-01.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img.DIGESTS",
+      "digests_asc": "https://tns-01.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar_production_proxmoxve_image.img.DIGESTS.asc",
+      "hash_algo": "sha256",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "gpg_key": "flatcar"
+    },
+    "podman": {
+      "type": "s3",
+      "bucket": "pxth-fcos",
+      "key": "flatcar/amd64-usr/4593.2.2/flatcar-podman.raw",
+      "endpoint": "https://tns-01.example.com:9000",
+      "dest": "sysext/podman.raw",
+      "min_size": 10485760,
+      "digests_url": "https://tns-01.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar-podman.raw.DIGESTS",
+      "digests_asc": "https://tns-01.example.com:9000/pxth-fcos/flatcar/amd64-usr/4593.2.2/flatcar-podman.raw.DIGESTS.asc",
+      "hash_algo": "sha512",
+      "digest": "c4b7c947fda4e98fa28b24dbd8bc953399a0cd895341bd7bf4d7ed7df26f485f",
+      "gpg_key": "flatcar"
+    },
+    "caddy": {
+      "type": "build",
+      "image": "localhost/caddy:cloudflare",
+      "dest": "containers/caddy/caddy-latest.tar",
+      "min_size": 1048576,
+      "digest": "1217baf0a37e6c6673d68cc1765de825c708a0b1f862fe1041f590e641b66133"
+    },
+    "sharkord": {
+      "type": "container",
+      "image": "registry.infr.example.com/sharkord/sharkord:v0.0.23",
+      "dest": "containers/sharkord/sharkord-v0.0.23.tar",
+      "min_size": 10485760,
+      "digest": "adbd8959e0526faee627ecb20e7495973b994d1c48b9d76d0485fd33b8b3b0f0"
+    },
+    "filegator": {
+      "type": "container",
+      "image": "registry.infr.example.com/filegator/filegator:v7.14.4",
+      "dest": "containers/filegator/filegator-v7.14.4.tar",
+      "min_size": 10485760,
+      "digest": "e472b2d985e93ce84903c1c6041661711e5f504d4865fa25ff60ed8ffecb28e5"
+    },
+    "jellyfin": {
+      "type": "container",
+      "image": "registry.infr.example.com/jellyfin/jellyfin:10.11.11",
+      "dest": "containers/jellyfin/jellyfin-10.11.11.tar",
+      "min_size": 10485760,
+      "digest": "45f648c382a0c8b552582fcea40e95cb17c5d475473a891cba0eb7523fb92112"
+    },
+    "arcane": {
+      "type": "container",
+      "image": "registry.infr.example.com/getarcaneapp/arcane:v2.4.0",
+      "dest": "containers/arcane/arcane-v2.4.0.tar",
+      "min_size": 10485760,
+      "digest": "3729f87c5573d6f03629c2064917309ba6accedd2a265bb4b81f3ef0e0378e08"
+    },
+    "restic": {
+      "type": "url",
+      "url": "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_amd64.bz2",
+      "dest": "bin/restic.bz2",
+      "min_size": 1048576,
+      "hash_algo": "sha256",
+      "digest": "13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21"
+    }
+  },
+  "oem": {
+    "disk_raw": "upload/node-a1_oem_disk.raw",
+    "tarball": ".tmp/oem-node-a1.tar.gz",
+    "tarball_size": 0,
+    "headroom": 64,
+    "bundle": {
+      "sysext": [
+        "sysext/*.raw"
+      ],
+      "bin": [
+        "bin/restic.bz2"
+      ],
+      "containers": [
+        "caddy",
+        "sharkord",
+        "filegator",
+        "jellyfin",
+        "arcane"
+      ],
+      "sources": [
+        {
+          "path": "apps/node-a1/scripts/node-a1-setup.sh",
+          "dest": "scripts/node-a1-setup.sh"
+        },
+        {
+          "path": "../../libs/scripts/ci/lib/logging.sh",
+          "dest": "scripts/lib/logging.sh"
+        }
+      ]
+    }
+  }
+}

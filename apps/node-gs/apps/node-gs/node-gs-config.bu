@@ -1,0 +1,1216 @@
+variant: flatcar
+version: 1.0.0
+
+
+
+
+systemd:
+  units:
+    - name: oem-extract.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Extract Base OEM Artifacts
+        After=local-fs.target
+        Before=node-gs-sysexts-install.service
+        ConditionPathExists=!/var/oem/.base-extracted
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ExecStartPre=-/bin/mkdir -p /var/oem
+        ExecStartPre=-/bin/mkdir -p /var/log
+
+
+
+        ExecStartPre=/bin/bash /var/oem-check.sh /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9
+        ExecStart=/bin/tar xzf /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9 -C /var/oem
+        ExecStartPost=/bin/touch /var/oem/.base-extracted
+        ExecStartPost=/bin/bash -c 'find /var/oem/scripts -type f -exec chmod +x {} \; 2>/dev/null || true'
+
+
+
+        ExecStartPost=/bin/chown -R root:root /var/oem
+        ExecStartPost=/bin/bash -c 'find /var/oem -type d -exec chmod 0755 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem -type f -exec chmod 0644 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem/scripts -type f -name "*.sh" -exec chmod 0750 {} +'
+
+
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-sysexts-install.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install podman sysext from OEM
+        After=oem-extract.service local-fs.target
+
+        [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          PrivateTmp=yes
+          NoNewPrivileges=yes
+          ExecStart=/bin/bash -c 'mkdir -p /etc/extensions'
+          ExecStart=/bin/bash -c 'cp -f /var/oem/sysext/podman.raw /etc/extensions/flatcar-podman.raw'
+          ExecStart=/bin/systemctl restart systemd-sysext
+          ExecStart=/bin/bash -c 'mkdir -p /opt/bin && bunzip2 -c /var/oem/bin/restic.bz2 > /opt/bin/restic && chmod +x /opt/bin/restic'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: podman-group-create.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Create podman group
+        Before=systemd-user-sessions.service
+        ConditionPathExists=!/etc/podman-group-created
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/groupadd -f -g 5500 podman
+        ExecStartPost=/bin/touch /etc/podman-group-created
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: create-run-containers.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Create XDG_RUNTIME_DIR for containers user
+        Before=systemd-user-sessions.service
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'mkdir -p /var/lib/containers/run && chown containers:containers /var/lib/containers/run && chmod 700 /var/lib/containers/run'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-netns-mount.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Mount tmpfs for netavark rootless network namespace
+        After=create-run-containers.service
+        Before=node-gs-containers.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c '\
+          mkdir -p /var/lib/containers/run/containers/networks/rootless-netns && \
+          mountpoint -q /var/lib/containers/run/containers/networks/rootless-netns || \
+          mount -t tmpfs -o size=16m,mode=0755,context="system_u:object_r:iptables_runtime_t" \
+            tmpfs /var/lib/containers/run/containers/networks/rootless-netns && \
+          chown containers:containers /var/lib/containers/run/containers/networks/rootless-netns'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: containers-linger-enable.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Enable linger for containers user
+        After=podman-group-create.service create-run-containers.service
+        Wants=create-run-containers.service
+        ConditionPathExists=!/etc/containers-linger-enabled
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/loginctl enable-linger containers
+        ExecStartPost=/bin/touch /etc/containers-linger-enabled
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: podman-enable.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Enable rootless Podman for containers user
+        After=podman-group-create.service containers-linger-enable.service
+        ConditionPathExists=!/etc/podman-enabled
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'mkdir -p /home/containers/.local/share/containers/storage'
+        ExecStart=/bin/bash -c 'mkdir -p /home/containers/.config/containers'
+        ExecStart=/bin/bash -c 'mkdir -p /home/containers/.run'
+        ExecStart=/bin/bash -c 'chown -R containers:containers /home/containers/.local /home/containers/.config /home/containers/.run'
+        ExecStartPost=/bin/touch /etc/podman-enabled
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: selinux-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Setup SELinux enforcement
+        After=local-fs.target
+        Before=node-gs-containers.service
+        ConditionPathExists=!/etc/selinux-setup-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'rm -f /etc/audit/rules.d/80-selinux.rules /etc/audit/rules.d/99-default.rules'
+        ExecStart=/bin/bash -c 'rm -rf /etc/selinux/mcs; cp -a /usr/lib/selinux/mcs /etc/selinux/'
+        ExecStart=/bin/bash -c 'rm -rf /var/lib/selinux; cp -a /usr/lib/selinux/policy /var/lib/selinux/'
+        ExecStart=/usr/bin/systemctl restart audit-rules
+        ExecStartPost=/bin/touch /etc/selinux-setup-complete
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: selinux-container-labels.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Pre-create and label Podman storage for SELinux
+        After=selinux-setup.service podman-enable.service create-run-containers.service node-gs-sysexts-install.service
+        Before=node-gs-containers.service
+        ConditionPathExists=/etc/selinux-setup-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'set -e; mkdir -p \
+          /home/containers/.local/share/containers/storage \
+          /home/containers/.local/share/containers/storage/overlay \
+          /home/containers/.local/share/containers/storage/overlay-layers \
+          /home/containers/.local/share/containers/storage/overlay-images \
+          /home/containers/.local/share/containers/storage/volumes \
+          /home/containers/.local/share/containers/storage/libpod \
+          /home/containers/.config/containers \
+          /home/containers/.run/containers'
+        ExecStart=/bin/bash -c 'semanage fcontext -a -t container_file_t "/home/containers/.local/share/containers(/.*)?" 2>/dev/null || true; semanage fcontext -a -t container_file_t "/home/containers/.config/containers(/.*)?" 2>/dev/null || true; semanage fcontext -a -t container_file_t "/home/containers/.run(/.*)?" 2>/dev/null || true; semanage fcontext -a -t container_file_t "/home/containers/volumes(/.*)?" 2>/dev/null || true'
+        ExecStart=/bin/bash -c 'restorecon -RF /home/containers 2>/dev/null || true'
+        ExecStart=/bin/bash -c 'chcon -R -t container_file_t /home/containers/.local/share/containers /home/containers/.config/containers /home/containers/volumes 2>/dev/null || true'
+        ExecStart=/bin/bash -c 'chcon -R -t container_runtime_t /var/lib/containers/run 2>/dev/null || true'
+        ExecStart=/bin/bash -c 'chown -R containers:containers /home/containers/.local/share/containers /home/containers/.config/containers /home/containers/.run 2>/dev/null || true'
+        ExecStart=/bin/bash -c 'chown -R 101006:101006 /home/containers/volumes/node-gs-data 2>/dev/null || true; echo "Podman storage pre-created and labeled"'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: network-ready.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Network Ready Indicator
+        After=network-online.target
+        Before=multi-user.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'mkdir -p /run/user/0 && chown root:root /run/user/0 && touch /run/user/0/network-ready'
+
+        [Install]
+        WantedBy=network-online.target
+
+    - name: apply-unprivileged-ports.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Apply unprivileged port sysctl early
+        Before=network.target systemd-sysctl.service
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/sbin/sysctl -p /etc/sysctl.d/99-unprivileged-ports.conf
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+
+
+    - name: node-gs-egress-policy.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Egress nftables policy for node-gs container UIDs
+        After=network-online.target
+        Before=node-gs-containers.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/nft -f /etc/nftables/node-gs-egress.nft
+        ExecStop=/usr/sbin/nft delete table ip node_gs_egress
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: podman-socket-activate.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Podman API socket service for containers user
+        After=selinux-container-labels.service node-gs-netns-mount.service user@5000.service containers-linger-enable.service create-run-containers.service node-gs-sysexts-install.service
+        Before=node-gs-containers.service
+
+        [Service]
+        Type=simple
+        User=containers
+        Environment="HOME=/home/containers"
+        Environment="XDG_RUNTIME_DIR=/run/user/5000"
+
+        ExecStartPre=/usr/sbin/groupadd -f -g 6100 arcagent
+        ExecStart=/usr/bin/podman system service --time=0
+
+        ExecStartPost=/bin/bash -c '\
+          for i in $(seq 1 30); do \
+            [ -S /run/user/5000/podman/podman.sock ] && \
+              chgrp 6100 /run/user/5000/podman/podman.sock && \
+              chmod 0660 /run/user/5000/podman/podman.sock && \
+              exit 0; \
+            sleep 1; \
+          done; \
+          echo "ERROR: podman.sock not ready after 30s"; exit 1'
+        Restart=always
+        RestartSec=5
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-restic-secrets.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Write Restic S3 Credentials to tmpfs
+        After=oem-extract.service
+        Requires=oem-extract.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=/bin/mkdir -p /run/secrets
+        ExecStart=/bin/bash -c '\
+          echo "AWS_ACCESS_KEY_ID=$$(cat /run/secrets/s3_backup_access_key_id.env | cut -d= -f2-)" > /run/secrets/restic.env; \
+          echo "AWS_SECRET_ACCESS_KEY=$$(cat /run/secrets/s3_backup_secret_access_key.env | cut -d= -f2-)" >> /run/secrets/restic.env'
+        ExecStartPost=/bin/chmod 0600 /run/secrets/restic.env
+        ExecStartPost=/bin/chown root:root /run/secrets/restic.env
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-backup-restore.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Restore node-gs volumes from Restic backup
+        After=node-gs-sysexts-install.service network-online.target node-gs-restic-secrets.service
+        Requires=node-gs-restic-secrets.service
+        Before=node-gs-secrets-create.service node-gs-containers.service
+        ConditionPathExists=!/var/oem/.backup-restored
+
+        [Service]
+        Type=oneshot
+        User=root
+        RemainAfterExit=yes
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStartPre=/bin/bash -c 'mkdir -p /home/containers/volumes /home/containers/.local/share/containers/storage/volumes'
+        ExecStart=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          if [ ! -f "$RESTIC" ]; then echo "Restic not found at $RESTIC"; exit 1; fi; \
+          export RESTIC_REPOSITORY="s3:$(cat /run/secrets/s3_backup_endpoint.env | cut -d= -f2-)/$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)/restic-$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)"; \
+           export RESTIC_PASSWORD="$(cat /run/secrets/s3_backup_restic_password.env | cut -d= -f2-)"; \
+           snapshots=$($RESTIC --repo $RESTIC_REPOSITORY snapshots --json 2>&1); \
+          rc=$?; \
+          if [ $rc -ne 0 ]; then \
+            echo "Cannot access repo (exit $rc): $snapshots"; \
+            touch /var/oem/.backup-restored; \
+            exit 0; \
+          fi; \
+          if [ "$snapshots" = "[]" ] || [ -z "$snapshots" ]; then \
+            echo "No snapshots found, skipping restore"; \
+            touch /var/oem/.backup-restored; \
+            exit 0; \
+          fi; \
+          echo "Restoring latest snapshot..."; \
+          $RESTIC --repo $RESTIC_REPOSITORY restore latest --target /; \
+          chown containers:containers /home/containers/volumes; \
+           chown -R 101006:101006 /home/containers/volumes/agent-data 2>/dev/null || true; \
+            chown containers:containers /home/containers/.local/share/containers/storage/volumes 2>/dev/null || true'
+        ExecStartPost=/bin/touch /var/oem/.backup-restored
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-volumes-register.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Register podman volumes restored from backup
+        After=node-gs-backup-restore.service
+        Before=node-gs-containers.service
+        ConditionPathExists=!/var/oem/.volumes-registered
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        User=containers
+        Environment="XDG_RUNTIME_DIR=/run/user/5000"
+        ExecStart=/bin/bash -c '\
+          VOLUME_DIRS=/home/containers/.local/share/containers/storage/volumes; \
+          for vol_dir in "$$VOLUME_DIRS"/*/; do \
+            vol_name=$$(basename "$$vol_dir"); \
+            if ! /usr/bin/podman volume inspect "$$vol_name" >/dev/null 2>&1; then \
+              echo "Registering volume: $$vol_name"; \
+              /usr/bin/podman volume create "$$vol_name" || echo "Failed to register $$vol_name"; \
+            else \
+              echo "Volume already registered: $$vol_name"; \
+            fi; \
+          done; \
+          touch /var/oem/.volumes-registered'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-backup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=NODE node-gs Daily Backup (Restic to S3)
+        After=network-online.target node-gs-containers.service node-gs-restic-secrets.service
+        Requires=node-gs-restic-secrets.service
+
+        [Service]
+        Type=oneshot
+        User=root
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStart=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          if [ ! -f "$RESTIC" ]; then echo "Restic not found at $RESTIC"; exit 1; fi; \
+          export RESTIC_REPOSITORY="s3:$(cat /run/secrets/s3_backup_endpoint.env | cut -d= -f2-)/$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)/restic-$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)"; \
+           export RESTIC_PASSWORD="$(cat /run/secrets/s3_backup_restic_password.env | cut -d= -f2-)"; \
+           $RESTIC --repo "$RESTIC_REPOSITORY" backup \
+            /home/containers/volumes/ \
+            /home/containers/.local/share/containers/storage/volumes/ \
+            /home/containers/.config/containers; \
+          rc=$?; [ $rc -le 1 ] && exit 0 || exit $rc'
+        ExecStartPost=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          export RESTIC_REPOSITORY="s3:$(cat /run/secrets/s3_backup_endpoint.env | cut -d= -f2-)/$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)/restic-$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)"; \
+           export RESTIC_PASSWORD="$(cat /run/secrets/s3_backup_restic_password.env | cut -d= -f2-)"; \
+           $RESTIC --repo "$RESTIC_REPOSITORY" forget \
+            --keep-daily 7 --keep-weekly 4 --keep-monthly 3 \
+            --prune 2>/dev/null || true'
+
+    - name: node-gs-backup.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily Backup Timer
+
+        [Timer]
+        Unit=node-gs-backup.service
+        OnCalendar=daily
+        OnCalendar=*-*-* 00:42:00
+        RandomizedDelaySec=3600
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: node-gs-backup-check.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Restic Backup Health Check
+        After=network-online.target node-gs-restic-secrets.service
+        Requires=node-gs-restic-secrets.service
+
+        [Service]
+        Type=oneshot
+        User=root
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStart=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          if [ ! -f "$RESTIC" ]; then echo "Restic not found"; exit 1; fi; \
+          export RESTIC_REPOSITORY="s3:$(cat /run/secrets/s3_backup_endpoint.env | cut -d= -f2-)/$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)/restic-$(cat /run/secrets/s3_backup_bucket.env | cut -d= -f2-)"; \
+           export RESTIC_PASSWORD="$(cat /run/secrets/s3_backup_restic_password.env | cut -d= -f2-)"; \
+           SNAPSHOTS=$($RESTIC --repo $RESTIC_REPOSITORY snapshots --json 2>/dev/null); \
+          rc=$?; \
+          if [ $rc -ne 0 ]; then echo "Cannot reach restic repository (exit $rc)"; exit 1; fi; \
+          CUTOFF=$(date -u -d "8 days ago" +%Y-%m-%dT%H:%M:%S); \
+          RECENT=$(echo "$SNAPSHOTS" | jq -c --arg cutoff "$CUTOFF" "[.[] | select(.time >= \$cutoff)] | length"); \
+          if [ "$RECENT" -eq 0 ]; then \
+            echo "ALERT: No restic snapshot in last 8 days. Check node-gs-backup.service."; \
+            exit 1; \
+          fi; \
+          echo "OK: $RECENT snapshot(s) found within last 8 days"'
+    - name: node-gs-secrets-create.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Create Podman secrets for node-gs agent
+        After=oem-extract.service user@5000.service containers-linger-enable.service
+        Before=node-gs-containers.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        User=root
+
+
+        ExecStartPre=/bin/mkdir -p /run/secrets
+        ExecStartPre=/bin/chmod 0700 /run/secrets
+        ExecStart=/var/oem/scripts/secrets-create.sh
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: sshd.service
+      enabled: true
+
+
+
+
+    - name: serial-getty@ttyS0.service
+      enabled: false
+      mask: true
+
+
+
+
+    - name: update-engine.service
+      enabled: true
+      mask: false
+
+    - name: locksmithd.service
+      enabled: true
+      mask: false
+      dropins:
+        - name: 10-reboot-window.conf
+          contents: |
+            [Unit]
+            Wants=locksmithd-reboot-window.service
+            After=locksmithd-reboot-window.service
+
+    - name: locksmithd-reboot-window.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Configure bounded Locksmith reboot window for OS updates
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+
+        ExecStart=/bin/bash -c 'mkdir -p /etc/systemd/system/locksmithd.service.d && \
+          printf "[Service]\nEnvironment=LOCKSMITHD_REBOOT_STRATEGY=reboot\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_START=03:00\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_LENGTH=1h\n" \
+          > /etc/systemd/system/locksmithd.service.d/10-reboot-window.conf'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+    - name: console-loglevel.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Set console log level to suppress audit spam on serial console
+        After=local-fs.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/sh -c 'echo 4 > /proc/sys/kernel/printk'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: podman-bridge-stp.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Disable STP on Podman bridges
+        After=network-online.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'for b in $(ls /sys/class/net/ 2>/dev/null | grep "^podman"); do ip link set "$b" type bridge stp_state 0; done'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Node-GS Setup Script
+        After=network-online.target oem-extract.service node-gs-sysexts-install.service podman-enable.service create-run-containers.service
+        ConditionPathExists=/var/oem/scripts/node-gs-setup.sh
+        ConditionPathExists=!/etc/node-gs-setup-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        Environment="LOG_FILE=/var/log/node-gs-setup.log"
+        SystemCallFilter=~@mount
+        ExecStartPre=/bin/bash -c 'echo "$(date): Starting Node-GS setup..." >> /var/log/node-gs-setup.log'
+        ExecStart=/var/oem/scripts/node-gs-setup.sh
+        TimeoutStartSec=1800
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=node-gs-setup
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-containers-load.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Load node-gs Container Images for Podman
+        After=systemd-user-sessions.service oem-extract.service node-gs-sysexts-install.service
+        Wants=systemd-user-sessions.service oem-extract.service node-gs-sysexts-install.service
+        ConditionPathExists=/var/oem/containers
+        ConditionPathExists=!/var/oem/.containers-loaded
+
+        [Service]
+        Type=oneshot
+        User=root
+        RemainAfterExit=yes
+        ExecStartPre=/bin/bash -c 'mkdir -p /home/containers/.local/share/containers/storage'
+        ExecStartPre=/bin/bash -c 'mkdir -p /home/containers/.config/containers'
+        ExecStartPre=/bin/bash -c 'chown -R containers:containers /home/containers/.local /home/containers/.config /home/containers/.run 2>/dev/null || true'
+        ExecStart=/bin/bash -c '\
+            loaded=0; \
+            failed=0; \
+            for component in /var/oem/containers/*; do \
+                [ -d "$component" ] || continue; \
+                for tar in "$component"/*.tar; do \
+                    [ -f "$tar" ] || continue; \
+                    if su - containers -c "XDG_RUNTIME_DIR=/run/user/5000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/5000/bus /usr/bin/podman load -i $tar" 2>&1; then \
+                        loaded=$((loaded + 1)); \
+                    else \
+                        failed=$((failed + 1)); \
+                    fi; \
+                done; \
+            done; \
+            echo "Loaded $loaded images, $failed failed"; \
+            [ $failed -eq 0 ] || exit 1'
+        ExecStartPost=/bin/touch /var/oem/.containers-loaded
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gs-containers.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=node-gs Containers (Arcane Headless Agent)
+         After=systemd-user-sessions.service network-ready.service podman-enable.service apply-unprivileged-ports.service create-run-containers.service selinux-setup.service selinux-container-labels.service node-gs-netns-mount.service node-gs-egress-policy.service podman-socket-activate.service node-gs-secrets-create.service node-gs-containers-load.service node-gs-backup-restore.service node-gs-volumes-register.service
+         Requires=systemd-user-sessions.service network-ready.service podman-enable.service apply-unprivileged-ports.service create-run-containers.service selinux-setup.service selinux-container-labels.service node-gs-netns-mount.service node-gs-egress-policy.service podman-socket-activate.service node-gs-secrets-create.service node-gs-containers-load.service node-gs-backup-restore.service node-gs-volumes-register.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        User=containers
+        Environment="HOME=/home/containers"
+        Environment="XDG_RUNTIME_DIR=/run/user/5000"
+        Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/5000/bus"
+        RemainAfterExit=yes
+        TimeoutStartSec=0
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+
+        ExecStart=/bin/bash -c '/usr/bin/podman network create node-gs_net 2>/dev/null || true'
+
+        ExecStart=/bin/bash -c '\
+          /usr/bin/podman run -d --restart=always --replace \
+            --name arcane-edge-agent \
+            --network host \
+            --user 1007:1007 \
+            --group-add 6100 \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --volume /run/user/5000/podman/podman.sock:/var/run/docker.sock \
+            --volume /home/containers/volumes/agent-data:/app/data \
+            --secret AGENT_TOKEN,type=env,target=AGENT_TOKEN \
+            --env EDGE_AGENT=true \
+            --env EDGE_TRANSPORT=auto \
+            --env MANAGER_API_URL=https://arcane.example.com \
+            ${arcane_headless_image}'
+
+        [Install]
+        WantedBy=multi-user.target
+
+storage:
+  files:
+
+    - path: /etc/hostname
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: ${node_hostname}
+
+
+    - path: /etc/systemd/network/10-eth0.network
+      mode: 0644
+      contents:
+        inline: |
+          [Match]
+          Name=eth0
+
+          [Network]
+          Address=${node_ip}
+          Gateway=${node_gateway}
+          DNS=${node_dns}
+          IPv4SendGratuitousARP=true
+          GratuitousARPCount=5
+
+
+    - path: /etc/selinux/config
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          SELINUX=enforcing
+          SELINUXTYPE=targeted
+
+
+    - path: /etc/timezone
+      mode: 0644
+      contents:
+        inline: UTC
+
+    - path: /etc/sysctl.d/99-unprivileged-ports.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          net.ipv4.ip_unprivileged_port_start=0
+
+    - path: /etc/containers/containers.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [containers]
+          label = false
+
+          [engine]
+          events_log_file = "/run/user/5000/containers/events.log"
+          env = []
+
+          [network]
+          network_backend = "netavark"
+
+          [secret]
+          driver = "file"
+          opts = { path = "/home/containers/.secrets" }
+
+
+
+
+
+    - path: /etc/containers/policy.json
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          {
+            "default": [
+              {
+                "type": "reject"
+              }
+            ],
+            "transports": {
+              "docker": {
+                "docker.io": [
+                  {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/containers/registry-signing-key.pub",
+                    "signedIdentity": {
+                      "type": "matchRepoDigestOrExact"
+                    }
+                  }
+                ],
+                "registry.infr.example.com": [
+                  {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/containers/registry-signing-key.pub",
+                    "signedIdentity": {
+                      "type": "matchRepoDigestOrExact"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+
+
+
+    - path: /etc/pki/containers/registry-signing-key.pub
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          PLACEHOLDER - replace with the real GPG public key block.
+
+
+
+    - path: /etc/pki/containers/registry-signing-key.pub
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          PLACEHOLDER - replace with the real GPG public key block.
+
+
+
+
+
+
+
+
+
+
+
+
+
+    - path: /home/containers/.config/containers/policy.json
+      mode: 0644
+      overwrite: true
+      user:
+        name: containers
+      group:
+        name: containers
+      contents:
+        inline: |
+          {
+            "default": [
+              {
+                "type": "reject"
+              }
+            ],
+            "transports": {
+              "docker": {
+                "docker.io": [
+                  {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/containers/registry-signing-key.pub",
+                    "signedIdentity": {
+                      "type": "matchRepoDigestOrExact"
+                    }
+                  }
+                ],
+                "registry.infr.example.com": [
+                  {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/containers/registry-signing-key.pub",
+                    "signedIdentity": {
+                      "type": "matchRepoDigestOrExact"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+
+
+    - path: /home/containers/.config/containers/storage.conf
+      mode: 0644
+      overwrite: true
+      user:
+        name: containers
+      group:
+        name: containers
+      contents:
+        inline: |
+          [storage]
+          driver = "overlay"
+
+          [storage.options]
+          mount_program = "/usr/bin/fuse-overlayfs"
+
+          [storage.options.overlay]
+          mountopt = "nodev"
+
+
+    - path: /home/containers/.config/containers/containers.conf
+      mode: 0644
+      overwrite: true
+      user:
+        name: containers
+      group:
+        name: containers
+      contents:
+       inline: |
+           [containers]
+           cgroup_manager = "cgroupfs"
+           events_logger = "file"
+           label = false
+
+           [engine]
+           events_logger = "file"
+           cgroup_manager = "cgroupfs"
+
+           [network]
+           network_backend = "netavark"
+
+           [secrets]
+           driver = "file"
+           options = "driver_opts.path=/home/containers/.secrets"
+
+
+    - path: /etc/containers/registries.conf
+      mode: 0644
+      contents:
+        inline: |
+          unqualified-search-registries = ["docker.io", "ghcr.io", "codeberg.org", "code.forgejo.org", "quay.io"]
+
+          [[registry]]
+          prefix = "docker.io"
+          location = "docker.io"
+          insecure = false
+
+          [[registry]]
+          prefix = "ghcr.io"
+          location = "ghcr.io"
+          insecure = false
+
+          [[registry]]
+          prefix = "codeberg.org"
+          location = "codeberg.org"
+          insecure = false
+
+          [[registry]]
+          prefix = "code.forgejo.org"
+          location = "code.forgejo.org"
+          insecure = false
+
+          [[registry]]
+          prefix = "quay.io"
+          location = "quay.io"
+          insecure = false
+
+    - path: /var/oem-check.sh
+      mode: 0755
+      contents:
+        inline: |
+
+          DISK="$1"
+          EXPECTED_SHA="${OEM_DISK_SHA256}"
+          TARBALL_SIZE="${TARBALL_SIZE}"
+          if [ -z "$EXPECTED_SHA" ] || [ -z "$TARBALL_SIZE" ]; then
+            echo "FATAL: OEM_DISK_SHA256 or TARBALL_SIZE not set"
+            exit 1
+          fi
+          ACTUAL=$(dd if="$DISK" bs=1M 2>/dev/null | head -c "$TARBALL_SIZE" | sha256sum | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED_SHA" ]; then
+            echo "FATAL: OEM tarball integrity check FAILED"
+            echo "  Expected: $EXPECTED_SHA"
+            echo "  Actual:   $ACTUAL"
+            echo "  Tarball size: $TARBALL_SIZE bytes"
+            exit 1
+          fi
+          echo "OEM tarball integrity OK: $ACTUAL"
+
+
+
+
+
+    - path: /var/oem/scripts/secrets-create.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+
+          set -euo pipefail
+
+          SCRIPT_DIR="$(cd "$(dirname "$${BASH_SOURCE[0]}")" && pwd)"
+          source "$SCRIPT_DIR/lib/podman-secrets.sh"
+
+
+
+          for _s in token; do
+            [[ -r "/run/secrets/$${_s}.env" ]] || { echo "FATAL: missing /run/secrets/$${_s}.env" >&2; exit 1; }
+          done
+
+          create AGENT_TOKEN   "token"
+
+          echo "Podman secrets created"
+
+
+    - path: /etc/subuid
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          containers:100000:65536
+
+    - path: /etc/subgid
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          containers:100000:65536
+
+
+    - path: /etc/ssh/sshd_config.d/99-hardening.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          AuthorizedKeysFile .ssh/authorized_keys
+
+
+    - path: /etc/sysctl.d/99-system.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          vm.overcommit_memory=1
+          vm.mmap_min_addr=65536
+          fs.inotify.max_user_watches=524288
+          fs.protected_hardlinks=1
+          fs.protected_symlinks=1
+          kernel.dmesg_restrict=1
+          kernel.kptr_restrict=2
+          net.ipv4.conf.all.log_martians=1
+          net.ipv4.conf.default.log_martians=1
+
+
+    - path: /etc/systemd/journald.conf.d/99-persistence.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          SystemMaxUse=512M
+          MaxRetentionSec=30day
+
+  directories:
+    - path: /home/containers
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.config
+      mode: 0700
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.config/systemd
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.config/systemd/user
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.config/systemd/user/default.target.wants
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.config/containers
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers/storage
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.run
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /var/lib/containers/run
+      mode: 0700
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/volumes
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/volumes/node-gs-data
+      mode: 0755
+      user:
+        id: 101006
+      group:
+        id: 101006
+    - path: /home/containers/volumes/agent-data
+      mode: 0755
+      user:
+        id: 101006
+      group:
+        id: 101006
+
+
+
+    - path: /etc/nftables/node-gs-egress.nft
+      mode: 0644
+      contents:
+        inline: |
+            table ip node_gs_egress {
+              chain input {
+                type filter hook input priority filter; policy accept;
+                meta skuid { 5000, 1007 } ct state established,related accept
+              }
+              chain output {
+                type filter hook output priority filter; policy accept;
+
+                meta skuid { 5000, 1007 } ct state established,related accept
+                meta skuid { 5000, 1007 } ct state invalid drop
+                meta skuid { 5000, 1007 } ip daddr 127.0.0.0/8 accept
+
+                meta skuid { 5000, 1007 } ip daddr ${node_gateway} udp dport 53 accept
+                meta skuid { 5000, 1007 } ip daddr ${node_gateway} tcp dport 53 accept
+
+                meta skuid 5000 ip daddr ${node_gateway} tcp dport { 443, 9000 } accept comment "S3 backup/registry"
+                meta skuid 5000 tcp dport 443 accept comment "HTTPS"
+                meta skuid 5000 tcp dport 80 accept comment "HTTP"
+
+                meta skuid 1007 tcp dport 443 accept comment "Arcane manager API (outbound only)"
+                meta skuid 1007 ip daddr ${node_gateway} tcp dport { 443, 9000 } accept comment "Local S3/registry"
+
+                meta skuid 5000 log prefix "NODE-GS-MGMT-BLOCKED: " drop
+                meta skuid 1007 log prefix "NODE-GS-AGENT-BLOCKED: " drop
+              }
+            }
+
+    - path: /etc/nftables
+      mode: 0755
+    - path: /var/log
+      mode: 0755
+    - path: /var/lib/selinux
+      mode: 0755
+    - path: /home/containers/.local/share/containers/storage/overlay
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers/storage/overlay-layers
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers/storage/overlay-images
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers/storage/volumes
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.local/share/containers/storage/libpod
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+    - path: /home/containers/.run/containers
+      mode: 0755
+      user:
+        name: containers
+      group:
+        name: containers
+
+  links:
+    - path: /home/containers/.config/systemd/user/default.target.wants/network-ready.service
+      target: /home/containers/.config/systemd/user/network-ready.service
+      user:
+        name: containers
+      group:
+        name: containers
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ${ssh_public_key}
+    - name: containers
+      uid: 5000
+      groups: [podman]
+      shell: /bin/bash
+
+  groups:
+    - name: podman
+      gid: 5500

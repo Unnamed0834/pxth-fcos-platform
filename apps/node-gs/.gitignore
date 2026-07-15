@@ -1,0 +1,31 @@
+# Build artifacts - NEVER commit these
+upload/
+.tmp/
+*.log
+*.digest
+.cache-manifest.json
+*.raw.verified
+artifacts/
+
+# Terraform
+.tofu/
+*.tfstate*
+.terraform/
+.terraform.lock.hcl
+
+# Age keys (secrets)
+age.txt
+*.agekey
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

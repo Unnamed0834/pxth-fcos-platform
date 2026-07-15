@@ -1,0 +1,24 @@
+{
+  "vm_name": "node-a1",
+  "vm_id": 2007,
+  "vm_description": "node-a1.infr.example.com — Node A1",
+  "ip_address": "203.0.113.21/24",
+  "gateway": "203.0.113.1",
+  "dns": "203.0.113.1",
+  "hostname": "node-a1",
+  "cpu_cores": 6,
+  "cpu_sockets": 1,
+  "memory_mb": 12288,
+  "os_disk_size": 100,
+  "vlan_id": 1002,
+  "network_bridge": "vmbr0",
+  "tags": ["node", "prod"],
+  "firewall_rules": [
+    {"type": "in", "action": "ACCEPT", "proto": "tcp", "dport": 22, "comment": "SSH"},
+    {"type": "in", "action": "ACCEPT", "proto": "icmp", "comment": "ICMP"},
+    {"type": "in", "action": "ACCEPT", "proto": "tcp", "dport": 80, "comment": "HTTP (Caddy)"},
+    {"type": "in", "action": "ACCEPT", "proto": "tcp", "dport": 443, "comment": "HTTPS (Caddy)"},
+    {"type": "in", "action": "ACCEPT", "proto": "tcp", "dport": 40000, "comment": "Sharkord TCP"},
+    {"type": "in", "action": "ACCEPT", "proto": "udp", "dport": 40000, "comment": "Sharkord UDP"}
+  ]
+}

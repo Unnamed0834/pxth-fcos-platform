@@ -1,0 +1,18 @@
+# Forgejo Runner Configuration
+# Template — placeholders replaced at boot by node-r-config.service
+#
+# The runner connects to the forgejo instance for CI job polling.
+# Token and UUID are injected from Podman secrets (node-r-secrets-create.service).
+
+runner:
+  name: __RUNNER_NAME__
+  capacity: 1
+  labels:
+    - ubuntu-latest
+
+server:
+  connections:
+    default:
+      url: __RUNNER_SERVER_URL__
+      uuid: __RUNNER_UUID__
+      token: __RUNNER_TOKEN__

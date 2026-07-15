@@ -1,0 +1,75 @@
+{
+  "node": "node-g1",
+  "inference_engine": "llama-server",
+  "workload_preset": "T2",
+  "nvidia_driver_version": "570.181",
+  "artifacts": {
+    "flatcar": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS.asc",
+      "dest": "images/flatcar/flatcar_production_proxmoxve_image.img",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "75415f01a55eeaf9c736029890d72d4e1231faf4ad15e0dd9eaffc95329400ab"
+    },
+    "nvidia-drivers-570-open": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-nvidia-drivers-570-open.raw",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-nvidia-drivers-570-open.raw.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-nvidia-drivers-570-open.raw.DIGESTS.asc",
+      "dest": "sysext/nvidia-drivers-570-open.raw",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "6e31997ee92acc6b590c08c86674cba869b715f001572dd44c41134794b038e2"
+    },
+    "nvidia-runtime": {
+      "type": "url",
+      "url": "https://github.com/flatcar/sysext-bakery/releases/download/nvidia-runtime-v1.18.2/nvidia-runtime-v1.18.2-x86-64.raw",
+      "dest": "sysext/nvidia-runtime.raw",
+      "min_size": 1048576,
+      "digest": "6b246385a13b4b982591127a67f368d37fa938652a17f7097c7c02b0b65631b3"
+    },
+    "vllm": {
+      "type": "container",
+      "image": "docker.io/vllm/vllm-openai:v0.25.1-cu129-ubuntu2404",
+      "dest": "containers/vllm/vllm-openai-v0.25.1-cu129-ubuntu2404.tar",
+      "min_size": 1048576,
+      "digest": "c681adf803219b92bbc610c8b317ad55b0195f5435708ff1cb6998bd2a201208"
+    },
+    "llama-server": {
+      "type": "container",
+      "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10015",
+      "dest": "containers/llama-server/llama.cpp-server-cuda12-b10015.tar",
+      "min_size": 1048576,
+      "digest": "0d6c600a69e8bdaafd7b91ed6db9160906ee8148ee12a609cf4d52b4e17aabe8"
+    }
+  },
+  "oem": {
+    "disk_raw": "upload/node-g1_oem_disk.raw",
+    "tarball": ".tmp/oem-node-g1.tar.gz",
+    "tarball_size": 0,
+    "headroom": 64,
+    "active": "llama-server",
+    "bundle": {
+      "sysext": [
+        "sysext/*.raw"
+      ],
+      "sources": [
+        {
+          "path": "apps/node-g1/scripts/node-g1-setup.sh",
+          "dest": "scripts/node-g1-setup.sh"
+        },
+        {
+          "path": "apps/node-g1/scripts/node-g1-workload.sh",
+          "dest": "scripts/node-g1-workload.sh"
+        },
+        {
+          "path": "../../libs/scripts/ci/lib/logging.sh",
+          "dest": "scripts/lib/logging.sh"
+        }
+      ]
+    }
+  }
+}

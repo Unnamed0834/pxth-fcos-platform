@@ -1,0 +1,9 @@
+node: pve-01
+interface: enp65s0f0
+pve_url: https://pve-01.example.com:8006
+pve_node_ip: 192.0.2.10
+datastore_vm: raid10
+datastore_os: local
+datastore_snippet: local
+ignition_config_pattern: "%s-config.bu"
+cache_manifest_version: v1

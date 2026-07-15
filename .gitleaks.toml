@@ -1,0 +1,42 @@
+title = "Secret scanning rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "age-secret-key"
+description = "age private key"
+regex = '''AGE-SECRET-KEY-1[1-9A-Za-z]{20,}'''
+
+[[rules]]
+id = "private-key-block"
+description = "PEM/OpenSSH private key"
+regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH |OPENPGP )?PRIVATE KEY-----'''
+
+[[rules]]
+id = "internal-domain"
+description = "internal domain sentinel (non-placeholder internal domains must not be committed)"
+regex = '''[A-Za-z0-9-]+\.(int\.)?internal\.example'''
+
+[[rules]]
+id = "zerotier-network-id"
+description = "real ZeroTier network identifier (0000000000000000 is the allowed placeholder)"
+regex = '''[Zz]ero[Tt]ier.*(^|[^0-9a-fA-F])[0-9a-fA-F]{16}([^0-9a-fA-F]|$)'''
+
+[rules.allowlist]
+description = "The all-zero network id is a placeholder, not a real identifier"
+regexes = ['''0000000000000000''']
+
+[[rules]]
+id = "operator-path"
+description = "operator home path or key path sentinel (real paths must not be committed)"
+regex = '''(/home/operator\b|\.\./key\.txt)'''
+
+[allowlist]
+description = "This tooling file must contain the patterns it detects"
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''tools/verify-sanitization\.sh$''',
+  '''NOTICE\.md$''',
+  '''tests/.*''',
+]

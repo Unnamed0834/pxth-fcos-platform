@@ -1,0 +1,748 @@
+variant: flatcar
+version: 1.0.0
+
+
+
+systemd:
+  units:
+    - name: oem-extract.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Extract Base OEM Artifacts
+        After=local-fs.target
+        Before=node-gw1-binaries-install.service
+        ConditionPathExists=!/var/oem/.base-extracted
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ExecStartPre=-/bin/mkdir -p /var/oem
+        ExecStartPre=-/bin/mkdir -p /var/log
+
+
+
+        ExecStartPre=/bin/bash /var/oem-check.sh /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9
+        ExecStart=/bin/tar xzf /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9 -C /var/oem
+        ExecStartPost=/bin/touch /var/oem/.base-extracted
+        ExecStartPost=/bin/bash -c 'find /var/oem/scripts -type f -exec chmod +x {} + 2>/dev/null || true'
+
+
+        ExecStartPost=/bin/chown -R root:root /var/oem
+        ExecStartPost=/bin/bash -c 'find /var/oem -type d -exec chmod 0755 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem -type f -exec chmod 0644 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem/scripts -type f -name "*.sh" -exec chmod 0750 {} +'
+
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gw1-binaries-install.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install ZeroTier and restic binaries from OEM
+        After=oem-extract.service local-fs.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ExecStart=/bin/bash -c 'mkdir -p /opt/bin /tmp/zt-extract && bsdtar -xf /var/oem/bin/zerotier-one.deb -O data.tar.xz | bsdtar -xf - -C /tmp/zt-extract && cp /tmp/zt-extract/usr/sbin/zerotier-one /opt/bin/zerotier-one && ln -sf /opt/bin/zerotier-one /opt/bin/zerotier-cli && ln -sf /opt/bin/zerotier-one /opt/bin/zerotier-idtool && chmod +x /opt/bin/zerotier-one && rm -rf /tmp/zt-extract'
+        ExecStart=/bin/bash -c 'bunzip2 -c /var/oem/bin/restic.bz2 > /opt/bin/restic && chmod +x /opt/bin/restic'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: node-gw1-backup-restore.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Restore NODE Gateway volumes from Restic backup
+        After=node-gw1-binaries-install.service network-online.target node-gw1-restic-secrets.service
+        Before=zerotier-one.service
+        ConditionPathExists=!/var/oem/.backup-restored
+        Requires=node-gw1-restic-secrets.service
+
+        [Service]
+        Type=oneshot
+        User=root
+        RemainAfterExit=yes
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/zerotier-one'
+        ExecStartPre=/bin/bash -c 'groupadd -f -g 999 zerotier || true'
+        ExecStartPre=/bin/bash -c 'useradd -r -u 999 -g zerotier -d /var/lib/zerotier-one -s /bin/false zerotier 2>/dev/null || true'
+        ExecStart=/bin/bash -c '\
+            RESTIC=/opt/bin/restic; \
+            if [ ! -f "$RESTIC" ]; then echo "Restic not found at $RESTIC"; exit 1; fi; \
+            export RESTIC_REPOSITORY; \
+            export RESTIC_PASSWORD; \
+            snapshots=$($RESTIC --repo "$RESTIC_REPOSITORY" snapshots --json 2>&1); \
+            rc=$?; \
+            if [ $rc -ne 0 ]; then \
+                echo "Cannot access repo (exit $rc): $snapshots"; \
+                touch /var/oem/.backup-restored; \
+                exit 0; \
+            fi; \
+            if [ "$snapshots" = "[]" ] || [ -z "$snapshots" ]; then \
+                echo "No snapshots found, skipping restore"; \
+                touch /var/oem/.backup-restored; \
+                exit 0; \
+            fi; \
+            echo "Restoring latest snapshot..."; \
+            $RESTIC --repo "$RESTIC_REPOSITORY" restore latest --target /; \
+            chown -R zerotier:zerotier /var/lib/zerotier-one 2>/dev/null || true; \
+            if [ -f "/var/lib/zerotier-one/identity.secret" ]; then \
+                echo "ZeroTier identity restored successfully"; \
+            else \
+                echo "No ZeroTier identity found - node will get new identity"; \
+            fi'
+        ExecStartPost=/bin/touch /var/oem/.backup-restored
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: node-gw1-selinux-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Setup SELinux enforcement for system security
+        After=local-fs.target
+        Before=node-gw1-egress-policy.service
+        ConditionPathExists=!/var/oem/.selinux-setup-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        ExecStart=/bin/bash -c 'rm -f /etc/audit/rules.d/80-selinux.rules /etc/audit/rules.d/99-default.rules'
+        ExecStart=/bin/bash -c 'rm -rf /etc/selinux/mcs; cp -a /usr/lib/selinux/mcs /etc/selinux/'
+        ExecStart=/bin/bash -c 'rm -rf /var/lib/selinux; cp -a /usr/lib/selinux/policy /var/lib/selinux/'
+        ExecStart=/bin/bash -c 'mkdir -p /etc/nftables && chmod 755 /etc/nftables'
+        ExecStart=/usr/bin/systemctl restart audit-rules
+        ExecStart=/bin/bash -c 'auditctl -R /etc/audit/rules.d/99-node-gw1-security.rules 2>/dev/null || true'
+        ExecStartPost=/bin/touch /var/oem/.selinux-setup-complete
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+    - name: node-gw1-egress-policy.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Egress nftables policy for ZeroTier gateway host
+        After=network-online.target node-gw1-selinux-setup.service
+        Before=zerotier-one.service
+        ConditionPathExists=!/var/oem/.egress-loaded
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/nft -f /etc/nftables/node-gw1-egress.nft
+        ExecStartPost=/bin/touch /var/oem/.egress-loaded
+        ExecStop=/usr/sbin/nft delete table ip node_gw1_egress
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: zerotier-kernel-modules.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Load kernel modules for ZeroTier
+        After=local-fs.target
+        Before=zerotier-one.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/sbin/modprobe tun
+        ExecStart=/sbin/modprobe iptable_nat
+        ExecStart=/sbin/modprobe nf_nat
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: node-gw1-selinux-zerotier.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Setup SELinux labels for ZeroTier native service
+        After=node-gw1-selinux-setup.service
+        Before=zerotier-one.service
+        ConditionPathExists=!/var/oem/.selinux-zerotier-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'chown -R root:root /var/lib/zerotier-one'
+        ExecStart=/bin/bash -c 'restorecon -RF /var/lib/zerotier-one 2>/dev/null || true'
+        ExecStartPost=/bin/touch /var/oem/.selinux-zerotier-complete
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: sshd.service
+      enabled: true
+
+
+
+
+    - name: serial-getty@ttyS0.service
+      enabled: false
+      mask: true
+
+
+
+
+    - name: update-engine.service
+      enabled: true
+      mask: false
+
+    - name: locksmithd.service
+      enabled: true
+      mask: false
+      dropins:
+        - name: 10-reboot-window.conf
+          contents: |
+            [Unit]
+            Wants=locksmithd-reboot-window.service
+            After=locksmithd-reboot-window.service
+
+    - name: locksmithd-reboot-window.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Configure bounded Locksmith reboot window for OS updates
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+
+        ExecStart=/bin/bash -c 'mkdir -p /etc/systemd/system/locksmithd.service.d && \
+          printf "[Service]\nEnvironment=LOCKSMITHD_REBOOT_STRATEGY=reboot\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_START=03:00\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_LENGTH=1h\n" \
+          > /etc/systemd/system/locksmithd.service.d/10-reboot-window.conf'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+    - name: console-loglevel.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Set console log level to suppress audit spam on serial console
+        After=local-fs.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/sh -c 'echo 4 > /proc/sys/kernel/printk'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: podman-bridge-stp.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Disable STP on Podman bridges
+        After=network-online.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'for b in $(ls /sys/class/net/ 2>/dev/null | grep "^podman"); do ip link set "$b" type bridge stp_state 0; done'
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: network-ready.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Network Ready Indicator
+        After=network-online.target
+        Before=multi-user.target
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash -c 'mkdir -p /run/user/0 && chown root:root /run/user/0 && touch /run/user/0/network-ready'
+
+        [Install]
+        WantedBy=network-online.target
+
+    - name: apply-unprivileged-ports.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Apply unprivileged port sysctl early
+        Before=network.target systemd-sysctl.service
+        DefaultDependencies=no
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/sbin/sysctl -p /etc/sysctl.d/99-unprivileged-ports.conf
+        ExecStart=/sbin/modprobe iptable_nat
+        ExecStart=/sbin/modprobe nf_nat
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: zerotier-one.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=ZeroTier One Network Gateway
+        After=network-online.target node-gw1-backup-restore.service zerotier-kernel-modules.service
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        Restart=always
+        RestartSec=10
+        User=root
+        Group=root
+
+
+        NoNewPrivileges=yes
+        AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+        PrivateDevices=no
+        ProtectSystem=strict
+        ProtectHome=yes
+        ReadWritePaths=/var/lib/zerotier-one
+
+
+        ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/zerotier-one'
+        ExecStartPre=/bin/bash -c 'modprobe tun 2>/dev/null || true'
+        ExecStart=/opt/bin/zerotier-one -U -p9993 /var/lib/zerotier-one
+        ExecStartPost=/bin/bash -c 'sleep 5 && /opt/bin/zerotier-cli join 0000000000000000 2>/dev/null || true'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+
+    - name: node-gw1-restic-secrets.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Write Restic S3 Credentials to tmpfs
+        After=oem-extract.service
+        Requires=oem-extract.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=/bin/mkdir -p /run/secrets
+
+
+        ExecStartPre=/bin/mkdir -p /run/secrets
+        ExecStartPre=/bin/chmod 0700 /run/secrets
+        ExecStart=/var/oem/scripts/secrets-create.sh
+        ExecStartPost=/bin/chmod 0600 /run/secrets/restic.env
+        ExecStartPost=/bin/chown root:root /run/secrets/restic.env
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gw1-backup.service
+      contents: |
+        [Unit]
+        Description=NODE Gateway Daily Backup (Restic to S3)
+        After=network-online.target zerotier-one.service node-gw1-restic-secrets.service
+        Wants=node-gw1-restic-secrets.service
+
+        [Service]
+        Type=oneshot
+        User=root
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStart=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          export RESTIC_REPOSITORY; \
+          export RESTIC_PASSWORD; \
+          $RESTIC backup /var/lib/zerotier-one; \
+          rc=$?; [ $rc -le 1 ] && exit 0 || exit $rc'
+        ExecStartPost=/bin/bash -c '\
+          export RESTIC_REPOSITORY; \
+          export RESTIC_PASSWORD; \
+          /opt/bin/restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune'
+
+
+    - name: node-gw1-backup.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily Backup Timer
+
+        [Timer]
+        Unit=node-gw1-backup.service
+        OnCalendar=daily
+        OnCalendar=*-*-* 00:42:00
+        RandomizedDelaySec=3600
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: node-gw1-backup-check.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Weekly Restic Backup Health Check
+        After=network-online.target node-gw1-restic-secrets.service
+        Wants=node-gw1-restic-secrets.service
+
+        [Service]
+        Type=oneshot
+        User=root
+
+        PrivateTmp=yes
+        NoNewPrivileges=yes
+        EnvironmentFile=/run/secrets/restic.env
+        ExecStart=/bin/bash -c '\
+          RESTIC=/opt/bin/restic; \
+          if [ ! -f "$RESTIC" ]; then echo "Restic not found"; exit 1; fi; \
+          export RESTIC_REPOSITORY; \
+          export RESTIC_PASSWORD; \
+          SNAPSHOTS=$($RESTIC snapshots --json 2>/dev/null); \
+          rc=$?; \
+          if [ $rc -ne 0 ]; then echo "Cannot reach restic repository (exit $rc)"; exit 1; fi; \
+          CUTOFF=$(date -u -d "8 days ago" +%Y-%m-%dT%H:%M:%S); \
+          RECENT=$(echo "$SNAPSHOTS" | /usr/bin/python3 -c \
+            "import sys,json; d=json.load(sys.stdin); c='"'"'$CUTOFF'"'"'; \
+             print(sum(1 for s in d if s.get('"'"'time'"'"','"'"''"'"')[:19] > c))"); \
+          if [ "$RECENT" -eq 0 ]; then \
+            echo "ALERT: No restic snapshot in last 8 days. Check node-gw1-backup.service."; \
+            exit 1; \
+          fi; \
+          echo "OK: $RECENT snapshot(s) found within last 8 days"'
+
+
+    - name: node-gw1-backup-check.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Weekly backup health check timer
+
+        [Timer]
+        Unit=node-gw1-backup-check.service
+        OnCalendar=Mon *-*-* 02:00:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: node-gw1-routing-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Configure ZeroTier Gateway Routing
+        After=zerotier-one.service network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStartPre=/bin/bash -c 'sleep 30'
+        ExecStart=/bin/bash /var/oem/scripts/zt-routing-setup.sh
+        StandardOutput=journal
+        StandardError=journal
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: node-gw1-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=NODE Gateway Setup Script
+        After=network-online.target node-gw1-routing-setup.service
+        Wants=network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/bash /var/oem/scripts/node-gw1-setup.sh
+        StandardOutput=journal
+        StandardError=journal
+
+        [Install]
+        WantedBy=multi-user.target
+
+storage:
+  files:
+
+    - path: /etc/hostname
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: ${node_hostname}
+
+
+    - path: /etc/timezone
+      mode: 0644
+      filesystem: root
+      contents:
+        inline: UTC
+
+    - path: /etc/sysctl.d/99-unprivileged-ports.conf
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+          net.ipv4.ip_unprivileged_port_start=0
+
+
+
+
+
+    - path: /etc/nftables/node-gw1-egress.nft
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+           table ip node_gw1_egress {
+             chain output {
+               type filter hook output priority filter; policy accept;
+
+
+
+
+
+               meta skuid { 0, 999 } ct state established,related accept
+
+
+               meta skuid { 0, 999 } ip daddr 127.0.0.0/8 accept
+
+
+
+
+                meta skuid 0 ip daddr { 203.0.113.1, 198.51.100.10 } tcp dport { 443, 9000 } accept comment "S3 backup"
+                meta skuid 0 udp dport 53 accept comment "DNS resolution"
+                meta skuid 0 tcp dport 53 accept comment "DNS over TCP"
+                meta skuid 0 tcp dport 443 accept comment "HTTPS internet access"
+                meta skuid 0 tcp dport 80 accept comment "HTTP internet access"
+                meta skuid 0 udp dport 9993 accept comment "ZeroTier VPN gateway"
+
+
+
+                 meta skuid 0 udp dport { 9993, 9994 } accept comment "ZeroTier main ports"
+
+
+                  meta skuid 0 udp dport 4000-65535 accept comment "ZeroTier root server communication (full range)"
+
+
+                  meta skuid 0 ip daddr 203.0.113.1 udp dport 5351 accept comment "mDNS to gateway"
+
+
+                  meta skuid 0 ip daddr 203.0.113.0/24 accept comment "Local VLAN access"
+
+
+                  meta skuid 0 ip daddr 224.0.0.0/4 accept comment "Multicast traffic"
+
+
+                meta skuid 999 accept comment "ZeroTier gateway needs full internet access"
+
+
+               meta skuid 0 log prefix "NODE-GW1-ROOT-BLOCKED: " drop
+               meta skuid 999 log prefix "NODE-GW1-ZEROTIER-BLOCKED: " drop
+             }
+           }
+
+
+    - path: /etc/selinux/config
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+          SELINUX=enforcing
+          SELINUXTYPE=targeted
+
+
+    - path: /etc/ssh/sshd_config.d/99-hardening.conf
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          AuthorizedKeysFile .ssh/authorized_keys
+
+
+    - path: /etc/sysctl.d/99-system.conf
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+
+          vm.overcommit_memory=1
+          vm.mmap_min_addr=65536
+
+
+          fs.inotify.max_user_watches=524288
+          fs.protected_hardlinks=1
+          fs.protected_symlinks=1
+
+
+          kernel.dmesg_restrict=1
+          kernel.kptr_restrict=2
+          kernel.yama.ptrace_scope=1
+
+
+          net.core.bpf_jit_harden=2
+          net.ipv4.conf.all.log_martians=1
+          net.ipv4.conf.default.log_martians=1
+
+
+          net.ipv4.ip_forward=1
+          net.ipv4.conf.all.forwarding=1
+          net.ipv4.conf.default.forwarding=1
+
+
+          net.core.rmem_max=16777216
+          net.core.rmem_default=262144
+          net.core.wmem_max=16777216
+          net.core.wmem_default=262144
+          net.core.netdev_max_backlog=5000
+          net.ipv4.udp_mem=102400 873800 16777216
+          net.ipv4.udp_rmem_min=8192
+          net.ipv4.udp_wmem_min=8192
+
+
+    - path: /etc/systemd/journald.conf.d/99-persistence.conf
+      mode: 0644
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          SystemMaxUse=512M
+          MaxRetentionSec=30day
+          ForwardToKMsg=no
+          ForwardToConsole=no
+          ForwardToWall=yes
+          MaxLevelWall=crit
+
+
+    - path: /etc/audit/rules.d/99-node-gw1-security.rules
+      mode: 0640
+      overwrite: true
+      filesystem: root
+      contents:
+        inline: |
+
+           -a always,exit -F arch=b64 -S socket -F a0=2 -k network_socket_ipv4
+           -a always,exit -F arch=b64 -S bind -k network_bind
+
+
+           -w /var/lib/zerotier-one -p wa -k zerotier_data_changes
+           -w /opt/bin/zerotier-one -p x -k zerotier_binary_exec
+           -w /opt/bin/zerotier-cli -p x -k zerotier_cli_exec
+
+
+           -a always,exit -F arch=b64 -S execve -F uid>=1000 -k user_exec
+           -a always,exit -F arch=b64 -S execve -F uid=999 -k zerotier_exec
+
+
+
+
+
+
+
+
+    - path: /var/oem-check.sh
+      mode: 0755
+      filesystem: root
+      contents:
+        inline: |
+
+          DISK="$1"
+          EXPECTED_SHA="${OEM_DISK_SHA256}"
+          TARBALL_SIZE="${TARBALL_SIZE}"
+          if [ -z "$EXPECTED_SHA" ] || [ -z "$TARBALL_SIZE" ]; then
+            echo "FATAL: OEM_DISK_SHA256 or TARBALL_SIZE not set"
+            exit 1
+          fi
+          ACTUAL=$(dd if="$DISK" bs=1M 2>/dev/null | head -c "$TARBALL_SIZE" | sha256sum | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED_SHA" ]; then
+            echo "FATAL: OEM tarball integrity check FAILED"
+            echo "  Expected: $EXPECTED_SHA"
+            echo "  Actual:   $ACTUAL"
+            echo "  Tarball size: $TARBALL_SIZE bytes"
+            exit 1
+          fi
+          echo "OEM tarball integrity OK: $ACTUAL"
+
+
+
+    - path: /etc/systemd/network/10-eth0.network
+      mode: 0644
+      contents:
+        inline: |
+          [Match]
+          Name=eth0
+
+          [Network]
+          DHCP=no
+          IPForward=yes
+          Address=${node_ip}
+          Gateway=${node_gateway}
+          DNS=${node_dns}
+          DNS=8.8.8.8
+          IPv4SendGratuitousARP=true
+          GratuitousARPCount=5
+
+          [Route]
+          Destination=0.0.0.0/0
+          Gateway=${node_gateway}
+
+  directories:
+
+      - path: /var/lib/zerotier-one
+        mode: 0755
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ${ssh_public_key}

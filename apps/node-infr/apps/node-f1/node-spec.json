@@ -1,0 +1,55 @@
+{
+  "vm_id": 2001,
+  "vm_name": "node-f1",
+  "vm_description": "node-f1.infr.example.com — CI/CD seed",
+  "ip_address": "198.51.100.21/24",
+  "gateway": "198.51.100.1",
+  "dns": "198.51.100.1",
+  "hostname": "node-f1",
+  "cpu_cores": 4,
+  "cpu_sockets": 1,
+  "memory_mb": 8192,
+  "os_disk_size": 750,
+  "vlan_id": 1001,
+  "network_bridge": "vmbr0",
+  "tags": [
+    "infr",
+    "pxth"
+  ],
+  "firewall_rules": [
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 22,
+      "comment": "Allow SSH"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "icmp",
+      "comment": "Allow ICMP"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 80,
+      "comment": "Allow HTTP (Caddy)"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 443,
+      "comment": "Allow HTTPS (Caddy TLS)"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 2222,
+      "comment": "Allow Forgejo SSH"
+    }
+  ]
+}

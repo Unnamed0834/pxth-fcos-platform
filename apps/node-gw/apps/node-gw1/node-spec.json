@@ -1,0 +1,20 @@
+{
+  "vm_name": "node-gw1",
+  "vm_id": 2006,
+  "vm_description": "node-gw1.infr.example.com — ZeroTier Gateway",
+  "ip_address": "203.0.113.20/24",
+  "gateway": "203.0.113.1",
+  "dns": "203.0.113.1",
+  "hostname": "node-gw1",
+  "cpu_cores": 2,
+  "cpu_sockets": 1,
+  "memory_mb": 2048,
+  "os_disk_size": 50,
+  "vlan_id": 1002,
+  "network_bridge": "vmbr0",
+  "tags": ["node", "prod", "ztgw"],
+  "firewall_rules": [
+    {"type": "in", "action": "ACCEPT", "proto": "tcp", "dport": 22, "comment": "SSH"},
+    {"type": "in", "action": "ACCEPT", "proto": "icmp", "comment": "ICMP"}
+  ]
+}

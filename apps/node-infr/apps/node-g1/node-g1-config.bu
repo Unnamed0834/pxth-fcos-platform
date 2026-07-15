@@ -1,0 +1,449 @@
+variant: flatcar
+version: 1.0.0
+
+
+
+systemd:
+  units:
+    - name: oem-extract.service
+
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Extract Base OEM Artifacts
+        After=local-fs.target
+        Before=nvidia-sysexts-install.service
+        ConditionPathExists=!/var/oem/.base-extracted
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStartPre=-/bin/mkdir -p /var/oem
+        ExecStartPre=-/bin/mkdir -p /var/log
+
+
+
+        ExecStartPre=/bin/bash /var/oem-check.sh /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9
+        ExecStart=/bin/tar xzf /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi9 -C /var/oem
+        ExecStartPost=/bin/touch /var/oem/.base-extracted
+        ExecStartPost=/bin/bash -c 'for f in /var/oem/scripts/*.sh; do [ -f "$f" ] && chmod +x "$f"; done'
+        ExecStartPost=/bin/bash -c 'for f in /var/oem/scripts/lib/*.sh; do [ -f "$f" ] && chmod +x "$f"; done'
+
+
+        ExecStartPost=/bin/chown -R root:root /var/oem
+        ExecStartPost=/bin/bash -c 'find /var/oem -type d -exec chmod 0755 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem -type f -exec chmod 0644 {} +'
+        ExecStartPost=/bin/bash -c 'find /var/oem/scripts -type f -name "*.sh" -exec chmod 0750 {} +'
+
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+    - name: nvidia-sysexts-install.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install NVIDIA sysexts from OEM (driver + runtime)
+        After=oem-extract.service systemd-sysext.service
+        Before=containerd.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+        ExecStart=/bin/bash -c 'mkdir -p /opt/extensions/nvidia-drivers && cp -f /var/oem/sysext/nvidia-drivers-570-open.raw /opt/extensions/nvidia-drivers/flatcar-nvidia-drivers-570-open.raw'
+        ExecStart=/bin/bash -c 'mkdir -p /etc/extensions && ln -sf /opt/extensions/nvidia-drivers/flatcar-nvidia-drivers-570-open.raw /etc/extensions/flatcar-nvidia-drivers-570-open.raw'
+
+        ExecStart=/bin/bash -c 'mkdir -p /opt/extensions/nvidia-runtime && cp -f /var/oem/sysext/nvidia-runtime.raw /opt/extensions/nvidia-runtime/'
+        ExecStart=/bin/bash -c 'ln -sf /opt/extensions/nvidia-runtime/nvidia-runtime.raw /etc/extensions/nvidia-runtime.raw'
+
+        ExecStart=/usr/bin/systemd-sysext refresh
+
+        ExecStart=/usr/sbin/modprobe nvidia
+        ExecStart=/usr/sbin/modprobe nvidia-uvm
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: oem-containers-verify.service
+
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Verify Container OEM Artifacts
+        After=oem-extract.service
+        Before=node-g1-setup.service
+        ConditionPathExists=!/var/oem/.containers-extracted
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        Environment="INFERENCE_ENGINE=${inference_engine}"
+        ExecStart=/bin/bash -c 'engine="$${INFERENCE_ENGINE:-llama-server}"; test -d "/var/oem/containers/$engine" && touch /var/oem/.containers-extracted'
+        ExecStartPost=/bin/touch /var/oem/.containers-extracted
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+
+    - name: nvidia.service
+      enabled: false
+
+
+    - name: sshd.service
+      enabled: true
+
+
+
+
+    - name: serial-getty@ttyS0.service
+      enabled: false
+      mask: true
+
+
+
+    - name: selinux-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Setup SELinux enforcement
+        After=local-fs.target
+        Before=node-g1-setup.service node-g1-workload.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ConditionPathExists=!/etc/selinux-setup-complete
+        ExecStart=/bin/bash -c 'rm -f /etc/audit/rules.d/80-selinux.rules /etc/audit/rules.d/99-default.rules'
+        ExecStart=/bin/bash -c 'rm -rf /etc/selinux/mcs; cp -a /usr/lib/selinux/mcs /etc/selinux/'
+        ExecStart=/bin/bash -c 'rm -rf /var/lib/selinux; cp -a /usr/lib/selinux/policy /var/lib/selinux/'
+        ExecStart=/usr/bin/systemctl restart audit-rules
+        ExecStartPost=/bin/touch /etc/selinux-setup-complete
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    - name: node-g1-egress-policy.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Egress nftables policy for node-g1 node
+        After=network-online.target
+        Before=node-g1-setup.service node-g1-workload.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/nft -f /etc/nftables/node-g1-egress.nft
+        ExecStop=/usr/sbin/nft delete table ip node-g1_egress
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+    - name: update-engine.service
+      enabled: true
+      mask: false
+
+    - name: locksmithd.service
+      enabled: true
+      mask: false
+      dropins:
+        - name: 10-reboot-window.conf
+          contents: |
+            [Unit]
+            Wants=locksmithd-reboot-window.service
+            After=locksmithd-reboot-window.service
+
+    - name: locksmithd-reboot-window.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Configure bounded Locksmith reboot window for OS updates
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+
+
+        ExecStart=/bin/bash -c 'mkdir -p /etc/systemd/system/locksmithd.service.d && \
+          printf "[Service]\nEnvironment=LOCKSMITHD_REBOOT_STRATEGY=reboot\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_START=03:00\nEnvironment=LOCKSMITHD_REBOOT_WINDOW_LENGTH=1h\n" \
+          > /etc/systemd/system/locksmithd.service.d/10-reboot-window.conf'
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+    - name: node-g1-setup.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Infr-G1 Node Setup
+        After=oem-extract.service network-online.target systemd-sysext.service
+        Wants=oem-extract.service network-online.target
+        ConditionPathExists=/var/oem/scripts/node-g1-setup.sh
+        ConditionPathExists=!/etc/node-g1-setup-complete
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        Environment="NFS_SERVER=${nfs_server}"
+        Environment="NFS_TIMEOUT=60"
+        Environment="INFERENCE_ENGINE=${inference_engine}"
+        Environment="VLLM_IMAGE=${vllm_image}"
+        Environment="LLAMA_SERVER_IMAGE=${llama_server_image}"
+        Environment="LOG_FILE=/var/log/node-g1-setup.log"
+        ExecStartPre=/bin/bash -c 'echo "$(date): Starting Infr-G1 setup..." >> /var/log/node-g1-setup.log'
+        ExecStart=/var/oem/scripts/node-g1-setup.sh
+        TimeoutStartSec=1800
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=node-g1-setup
+
+        [Install]
+        WantedBy=multi-user.target
+
+
+
+
+    - name: node-g1-workload.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Start GPU Inference Workload
+        After=network-online.target remote-fs.target containerd.service node-g1-setup.service
+        Wants=node-g1-setup.service
+        ConditionPathExists=/var/oem/scripts/node-g1-workload.sh
+
+        [Service]
+        Type=oneshot
+        EnvironmentFile=/etc/node-g1-workload.conf
+        Environment="LLAMA_SERVER_IMAGE=${llama_server_image}"
+
+
+        ExecStartPre=/bin/bash -c '/usr/sbin/groupadd -f -g 6200 workloadlog || true; touch /var/log/workload.log; chown root:workloadlog /var/log/workload.log; chmod 0640 /var/log/workload.log'
+
+
+
+        ExecStartPre=/bin/bash -c '\
+          for i in $(seq 1 240); do \
+            [ -f /etc/node-g1-setup-complete ] && exit 0; \
+            [ $((i % 12)) -eq 0 ] && echo "Waiting for node-g1-setup sentinel... ($((i*5))s)"; \
+            sleep 5; \
+          done; \
+          echo "ERROR: node-g1-setup never completed after 20 minutes"; exit 1'
+        ExecStart=/bin/bash -c 'for i in {1..30}; do /var/oem/scripts/node-g1-workload.sh start && exit 0; echo "Retry $i/30 in 30s..."; sleep 30; done; exit 1'
+        TimeoutStartSec=3600
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=node-g1-workload
+
+        [Install]
+        WantedBy=multi-user.target
+
+storage:
+  files:
+
+
+
+    - path: /var/oem-check.sh
+      mode: 0755
+      contents:
+        inline: |
+
+          DISK="$1"
+          EXPECTED_SHA="${OEM_DISK_SHA256}"
+          TARBALL_SIZE="${TARBALL_SIZE}"
+          if [ -z "$EXPECTED_SHA" ] || [ -z "$TARBALL_SIZE" ]; then
+            echo "FATAL: OEM_DISK_SHA256 or TARBALL_SIZE not set"
+            exit 1
+          fi
+          ACTUAL=$(dd if="$DISK" bs=1M 2>/dev/null | head -c "$TARBALL_SIZE" | sha256sum | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED_SHA" ]; then
+            echo "FATAL: OEM tarball integrity check FAILED"
+            echo "  Expected: $EXPECTED_SHA"
+            echo "  Actual:   $ACTUAL"
+            echo "  Tarball size: $TARBALL_SIZE bytes"
+            exit 1
+          fi
+          echo "OEM tarball integrity OK: $ACTUAL"
+
+
+
+
+    - path: /etc/nftables/node-g1-egress.nft
+      mode: 0644
+      contents:
+        inline: |
+          table ip node-g1_egress {
+            chain output {
+              type filter hook output priority filter; policy accept;
+
+              ct state invalid drop
+
+              ct state established,related accept
+
+              ip daddr 127.0.0.0/8 accept
+
+              ip daddr 198.51.100.0/24 accept
+
+              ip daddr ${nfs_server} tcp dport 2049 accept
+              ip daddr ${nfs_server} udp dport 2049 accept
+              ip daddr ${nfs_server} tcp dport 111 accept
+              ip daddr ${nfs_server} udp dport 111 accept
+
+              ip daddr 198.51.100.1 udp dport 53 accept
+              ip daddr 198.51.100.1 tcp dport 53 accept
+
+              udp dport 123 accept
+
+              ip daddr 192.0.2.0/24 accept
+
+              log prefix "INFR-G1-BLOCKED: " drop
+            }
+          }
+
+
+
+    - path: /etc/selinux/config
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          SELINUX=enforcing
+          SELINUXTYPE=targeted
+
+    - path: /etc/hostname
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: ${node_hostname}
+
+
+    - path: /etc/timezone
+      mode: 0644
+      contents:
+        inline: UTC
+
+
+
+    - path: /etc/systemd/network/10-eth0.network
+      mode: 0644
+      contents:
+        inline: |
+          [Match]
+          Name=eth0
+
+          [Network]
+          Address=${node_ip}
+          Gateway=${node_gateway}
+          DNS=${node_dns}
+          IPv4SendGratuitousARP=true
+          GratuitousARPCount=5
+
+
+    - path: /etc/sysctl.d/99-node-g1.conf
+      mode: 0644
+      contents:
+        inline: |
+          net.ipv4.ip_forward=1
+          fs.inotify.max_user_watches=524288
+
+
+
+
+    - path: /etc/ssh/sshd_config.d/99-hardening.conf
+      mode: 0644
+      contents:
+        inline: |
+          PermitRootLogin no
+          PasswordAuthentication no
+
+
+
+
+    - path: /etc/flatcar/nvidia-metadata
+      mode: 0644
+      contents:
+        inline: |
+          NVIDIA_DRIVER_VERSION=${nvidia_driver_version}
+          NVIDIA_SYSEXT=nvidia-drivers-570-open
+
+
+    - path: /etc/profile.d/opt-bin.sh
+      mode: 0644
+      contents:
+        inline: |
+          export PATH="$PATH:/opt/bin"
+
+
+    - path: /etc/containerd/config.toml
+      mode: 0644
+      contents:
+        inline: |
+          version = 2
+          [plugins."io.containerd.grpc.v1.cri"]
+            [plugins."io.containerd.grpc.v1.cri".containerd]
+              default_runtime_name = "runc"
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                  runtime_type = "io.containerd.runc.v2"
+
+
+
+    - path: /etc/containerd/config-nvidia.toml
+      mode: 0644
+      contents:
+        inline: |
+          version = 2
+          [plugins."io.containerd.grpc.v1.cri"]
+            [plugins."io.containerd.grpc.v1.cri".containerd]
+              default_runtime_name = "runc"
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                  runtime_type = "io.containerd.runc.v2"
+
+
+
+    - path: /etc/node-g1-workload.conf
+      mode: 0644
+      contents:
+        inline: |
+
+
+          WORKLOAD_PRESET=${workload_preset}
+          QWEN_MODEL=${workload_preset == "T4" ? "Qwen3.5-122B-A10B-UD-Q4_K_XL-00001-of-00003.gguf" : "Qwen3.6-35B-A3B-MTP-UD-Q6_K_XL.gguf"}
+
+  directories:
+    - path: /etc/nftables
+      mode: 0755
+    - path: /var/log
+      mode: 0755
+    - path: /var/log/vllm
+      mode: 0755
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ${ssh_public_key}

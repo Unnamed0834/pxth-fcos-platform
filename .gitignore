@@ -1,0 +1,52 @@
+# Keys and secrets — never commit
+*.key
+*.pem
+age.txt
+key.txt
+*.age
+*.agekey
+*.enc
+*.sops.yaml
+.env
+*.env
+.secrets-tmp/
+secrets/*.yml
+secrets/*.yaml
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl.bak
+crash.log
+
+# Generated build artifacts
+upload/
+artifacts/
+.cache-manifest.json
+*.raw
+*.qcow2
+*.vma
+*.iso
+*.img
+*.tar
+*.tar.gz
+*.tgz
+
+# Runtime state
+*.lock
+.pxth/
+.tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

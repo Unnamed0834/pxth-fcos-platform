@@ -1,0 +1,116 @@
+# Lockfile TEMPLATE (placeholder hashes; regenerate with tofu init before use).
+# Copy to a deploy workspace as .terraform.lock.hcl for reproducible pins.
+# Regenerate with: tofu providers lock -platform=linux_amd64 -platform=darwin_arm64
+# See versions.tf for the upgrade procedure.
+
+# This file is maintained automatically by "tofu init".
+# Manual edits may be lost in future updates.
+
+provider "registry.opentofu.org/bpg/proxmox" {
+  version     = "0.123.1"
+  constraints = "0.123.1"
+  hashes = [
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+  ]
+}
+
+provider "registry.opentofu.org/carlpett/sops" {
+  version     = "1.4.1"
+  constraints = "1.4.1"
+  hashes = [
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+  ]
+}
+
+provider "registry.opentofu.org/hashicorp/null" {
+  version     = "3.3.2"
+  constraints = "3.3.2"
+  hashes = [
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+  ]
+}
+
+provider "registry.opentofu.org/poseidon/ct" {
+  version     = "0.14.0"
+  constraints = "0.14.0"
+  hashes = [
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "h1:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+    "zh:EXAMPLE_HASH",
+  ]
+}

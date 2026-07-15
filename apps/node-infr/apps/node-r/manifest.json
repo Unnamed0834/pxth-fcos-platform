@@ -1,0 +1,72 @@
+{
+  "node": "node-r",
+  "artifacts": {
+    "flatcar": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_proxmoxve_image.img.DIGESTS.asc",
+      "dest": "images/flatcar/flatcar_production_proxmoxve_image.img",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "75415f01a55eeaf9c736029890d72d4e1231faf4ad15e0dd9eaffc95329400ab"
+    },
+    "podman": {
+      "type": "url",
+      "url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw",
+      "digests_url": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw.DIGESTS",
+      "digests_asc": "https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar-podman.raw.DIGESTS.asc",
+      "dest": "sysext/podman.raw",
+      "hash_algo": "sha512",
+      "min_size": 1048576,
+      "digest": "c4b7c947fda4e98fa28b24dbd8bc953399a0cd895341bd7bf4d7ed7df26f485f"
+    },
+    "forgejo-runner": {
+      "type": "container",
+      "image": "code.forgejo.org/forgejo/runner:12.11.0",
+      "dest": "containers/forgejo-runner/runner-12.11.0.tar",
+      "min_size": 1048576,
+      "digest": "4d09329b998b08f396c18ea7b912a60fb3011acf70481c71309466b549d7d83c"
+    },
+    "ubuntu": {
+      "type": "container",
+      "image": "ubuntu:24.04",
+      "dest": "containers/ubuntu/ubuntu-24.04.tar",
+      "min_size": 1048576,
+      "digest": "023f8a753c22258c9fe2d0005a7d28258038da7d620e9f93e9ad78aa266f9f11"
+    }
+  },
+  "oem": {
+    "disk_raw": "upload/node-r_oem_disk.raw",
+    "tarball": ".tmp/oem-node-r.tar.gz",
+    "tarball_size": 0,
+    "headroom": 64,
+    "bundle": {
+      "sysext": [
+        "sysext/*.raw"
+      ],
+      "containers": [
+        "forgejo-runner",
+        "ubuntu"
+      ],
+      "sources": [
+        {
+          "path": "apps/node-r/scripts/node-r-setup.sh",
+          "dest": "scripts/node-r-setup.sh"
+        },
+        {
+          "path": "../../libs/scripts/ci/lib/logging.sh",
+          "dest": "scripts/lib/logging.sh"
+        },
+        {
+          "path": "../../libs/scripts/lib/podman-secrets.sh",
+          "dest": "scripts/lib/podman-secrets.sh"
+        },
+        {
+          "path": "apps/node-r/scripts/node-r-config.yaml.tmpl",
+          "dest": "scripts/node-r-config.yaml.tmpl"
+        }
+      ]
+    }
+  }
+}

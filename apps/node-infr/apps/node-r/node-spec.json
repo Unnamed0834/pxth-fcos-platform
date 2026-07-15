@@ -1,0 +1,66 @@
+{
+  "gateway": "198.51.100.1",
+  "dns": "198.51.100.1",
+  "cpu_cores": 2,
+  "cpu_sockets": 1,
+  "memory_mb": 4096,
+  "os_disk_size": 50,
+  "vlan_id": 1001,
+  "network_bridge": "vmbr0",
+  "tags": [
+    "infr",
+    "pxth"
+  ],
+  "nodes": [
+    {
+      "name": "node-r1",
+      "name_us": "infr_r1",
+      "vm_id": 2003,
+      "ip_address": "198.51.100.31/24",
+      "hostname": "node-r1"
+    },
+    {
+      "name": "node-r2",
+      "name_us": "infr_r2",
+      "vm_id": 2004,
+      "ip_address": "198.51.100.32/24",
+      "hostname": "node-r2"
+    },
+    {
+      "name": "node-r3",
+      "name_us": "infr_r3",
+      "vm_id": 2005,
+      "ip_address": "198.51.100.33/24",
+      "hostname": "node-r3"
+    }
+  ],
+  "firewall_rules": [
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": 22,
+      "comment": "Allow SSH"
+    },
+    {
+      "type": "in",
+      "action": "ACCEPT",
+      "proto": "icmp",
+      "comment": "Allow ICMP"
+    },
+    {
+      "type": "out",
+      "action": "ACCEPT",
+      "proto": "tcp",
+      "dport": "80,443",
+      "comment": "Allow outbound HTTP/HTTPS"
+    },
+    {
+      "type": "out",
+      "action": "ACCEPT",
+      "proto": "udp",
+      "dport": 53,
+      "comment": "Allow outbound DNS"
+    }
+  ]
+}
